@@ -7,10 +7,10 @@ import dbClient from '../utils/db';
 import fileQueue from '../utils/fileQueue';
 import redisClient from '../utils/redis';
 
-const { ObjectId } = pkg;
+const ObjectId = pkg.ObjectId || pkg.ObjectID;
 
 class FilesController {
-  static async getAuthenticatedUserId(request, response) {
+  static async getAuthenticatedUser(request, response) {
     const token = request.headers['x-token'];
     if (!token) {
       response.status(401).json({ error: 'Unauthorized' });
@@ -23,7 +23,30 @@ class FilesController {
       return null;
     }
 
-    return userId;
+    if (!ObjectId.isValid(userId) || !dbClient.db) {
+      response.status(401).json({ error: 'Unauthorized' });
+      return null;
+    }
+
+    const user = await dbClient.db.collection('users').findOne({
+      _id: new ObjectId(userId),
+    });
+
+    if (!user) {
+      response.status(401).json({ error: 'Unauthorized' });
+      return null;
+    }
+
+    return user;
+  }
+
+  static async getAuthenticatedUserId(request, response) {
+    const user = await FilesController.getAuthenticatedUser(request, response);
+    if (!user) {
+      return null;
+    }
+
+    return user._id.toString();
   }
 
   static async getTokenUserId(request) {
@@ -42,8 +65,34 @@ class FilesController {
       name: file.name,
       type: file.type,
       isPublic: Boolean(file.isPublic),
-      parentId: file.parentId === '0' ? 0 : file.parentId.toString(),
+      parentId: file.parentId === 0 || file.parentId === '0'
+        ? 0
+        : file.parentId.toString(),
     };
+  }
+
+  static getUserIdMatch(userId) {
+    const userIdString = userId.toString();
+
+    return ObjectId.isValid(userIdString)
+      ? { $in: [new ObjectId(userIdString), userIdString] }
+      : userIdString;
+  }
+
+  static getParentIdMatch(parentId) {
+    if (
+      parentId === undefined
+      || parentId === null
+      || parentId === ''
+      || parentId === 0
+      || parentId === '0'
+    ) {
+      return { $in: [0, '0'] };
+    }
+
+    return ObjectId.isValid(parentId)
+      ? { $in: [new ObjectId(parentId), parentId] }
+      : parentId;
   }
 
   static async findOwnedFile(userId, fileId) {
@@ -53,7 +102,7 @@ class FilesController {
 
     return dbClient.db.collection('files').findOne({
       _id: new ObjectId(fileId),
-      userId: new ObjectId(userId),
+      userId: FilesController.getUserIdMatch(userId),
     });
   }
 
@@ -105,7 +154,7 @@ class FilesController {
 
       parentObjectId = parentFile._id;
     } else {
-      parentObjectId = '0';
+      parentObjectId = 0;
     }
 
     const fileDocument = {
@@ -157,12 +206,12 @@ class FilesController {
   }
 
   static async getShow(request, response) {
-    const userId = await FilesController.getAuthenticatedUserId(request, response);
-    if (!userId) {
+    const user = await FilesController.getAuthenticatedUser(request, response);
+    if (!user) {
       return null;
     }
 
-    const file = await FilesController.findOwnedFile(userId, request.params.id);
+    const file = await FilesController.findOwnedFile(user._id, request.params.id);
     if (!file) {
       return response.status(404).json({ error: 'Not found' });
     }
@@ -221,12 +270,12 @@ class FilesController {
   }
 
   static async getIndex(request, response) {
-    const userId = await FilesController.getAuthenticatedUserId(request, response);
-    if (!userId) {
+    const user = await FilesController.getAuthenticatedUser(request, response);
+    if (!user) {
       return null;
     }
 
-    const { parentId = '0', page: pageRaw } = request.query || {};
+    const { parentId = 0, page: pageRaw } = request.query || {};
     const pageNumber = Number(pageRaw);
     const page = Number.isNaN(pageNumber) ? 0 : pageNumber;
     if (!dbClient.db) {
@@ -236,17 +285,9 @@ class FilesController {
     const filesCollection = dbClient.db.collection('files');
 
     const match = {
-      userId: new ObjectId(userId),
-      parentId,
+      userId: FilesController.getUserIdMatch(user._id),
+      parentId: FilesController.getParentIdMatch(parentId),
     };
-
-    if (parentId !== '0') {
-      try {
-        match.parentId = new ObjectId(parentId);
-      } catch (error) {
-        return response.status(200).json([]);
-      }
-    }
 
     let files = [];
     try {

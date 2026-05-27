@@ -204,7 +204,7 @@ class FilesController {
     }
 
     const { size } = request.query || {};
-    let localPath = file.localPath;
+    let { localPath } = file;
     if (file.type === 'image' && ['500', '250', '100'].includes(String(size))) {
       localPath = `${file.localPath}_${size}`;
     }

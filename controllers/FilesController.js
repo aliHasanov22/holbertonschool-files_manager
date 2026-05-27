@@ -3,9 +3,9 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import pkg from 'mongodb';
 import mime from 'mime-types';
-import dbClient from '../utils/db.mjs';
-import fileQueue from '../utils/fileQueue.mjs';
-import redisClient from '../utils/redis.mjs';
+import dbClient from '../utils/db';
+import fileQueue from '../utils/fileQueue';
+import redisClient from '../utils/redis';
 
 const { ObjectId } = pkg;
 
@@ -226,8 +226,8 @@ class FilesController {
       return null;
     }
 
-    const parentId = request.query.parentId === undefined ? '0' : request.query.parentId;
-    const pageNumber = Number(request.query.page);
+    const { parentId = '0', page: pageRaw } = request.query || {};
+    const pageNumber = Number(pageRaw);
     const page = Number.isNaN(pageNumber) ? 0 : pageNumber;
     const filesCollection = dbClient.db.collection('files');
 

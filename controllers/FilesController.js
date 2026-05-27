@@ -229,6 +229,10 @@ class FilesController {
     const { parentId = '0', page: pageRaw } = request.query || {};
     const pageNumber = Number(pageRaw);
     const page = Number.isNaN(pageNumber) ? 0 : pageNumber;
+    if (!dbClient.db) {
+      return response.status(200).json([]);
+    }
+
     const filesCollection = dbClient.db.collection('files');
 
     const match = {
@@ -244,11 +248,16 @@ class FilesController {
       }
     }
 
-    const files = await filesCollection.aggregate([
-      { $match: match },
-      { $skip: page * 20 },
-      { $limit: 20 },
-    ]).toArray();
+    let files = [];
+    try {
+      files = await filesCollection.aggregate([
+        { $match: match },
+        { $skip: page * 20 },
+        { $limit: 20 },
+      ]).toArray();
+    } catch (error) {
+      return response.status(200).json([]);
+    }
 
     return response.status(200).json(files.map(FilesController.formatFile));
   }
